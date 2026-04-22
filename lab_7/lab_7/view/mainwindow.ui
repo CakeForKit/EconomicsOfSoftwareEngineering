@@ -1,0 +1,686 @@
+import sys
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QGridLayout, QGroupBox, QLabel, QSpinBox, QComboBox, QPushButton,
+    QScrollArea, QFrame, QSizePolicy, QSpacerItem, QHeaderView,
+    QTableWidget, QTableWidgetItem, QProgressBar, QStackedWidget
+)
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtSignal, QTimer
+from PyQt5.QtGui import QColor, QPalette, QFont, QIcon, QLinearGradient, QBrush
+
+
+class ModernCard(QFrame):
+    """Карточка с тенью и скруглением"""
+    def __init__(self, title="", parent=None):
+        super().__init__(parent)
+        self.setObjectName("card")
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(20, 20, 20, 20)
+        self.layout.setSpacing(15)
+        
+        if title:
+            self.title = QLabel(title)
+            self.title.setObjectName("cardTitle")
+            self.title.setFont(QFont("Segoe UI", 14, QFont.Bold))
+            self.layout.addWidget(self.title)
+
+
+class AnimatedButton(QPushButton):
+    """Кнопка с hover-эффектом"""
+    def __init__(self, text, parent=None):
+        super().__init__(text, parent)
+        self.setObjectName("actionButton")
+        self.setMinimumHeight(48)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFont(QFont("Segoe UI", 12, QFont.Bold))
+
+
+class FunctionPointCalculator(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Калькулятор функциональных точек")
+        self.setMinimumSize(1300, 900)
+        
+        # Центральный виджет
+        self.central = QWidget()
+        self.setCentralWidget(self.central)
+        self.main_layout = QVBoxLayout(self.central)
+        self.main_layout.setContentsMargins(30, 30, 30, 30)
+        self.main_layout.setSpacing(25)
+        
+        self.setup_styles()
+        self.setup_ui()
+        self.connect_signals()
+        
+    def setup_styles(self):
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f0f2f5;
+            }
+            
+            /* Карточки */
+            #card {
+                background-color: white;
+                border-radius: 12px;
+                border: 1px solid #e1e4e8;
+            }
+            #cardTitle {
+                color: #1a1a2e;
+                margin-bottom: 10px;
+            }
+            
+            /* Заголовки секций */
+            QLabel#sectionHeader {
+                color: #1a1a2e;
+                font-size: 18px;
+                font-weight: bold;
+                padding: 10px 0;
+            }
+            
+            /* Обычные метки */
+            QLabel {
+                color: #2d3748;
+                font-size: 13px;
+                font-family: 'Segoe UI', sans-serif;
+            }
+            
+            /* Заголовки таблицы */
+            QLabel#tableHeader {
+                background-color: #4a5568;
+                color: white;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 6px;
+                font-size: 12px;
+            }
+            
+            /* Подзаголовки сложности */
+            QLabel#complexityHeader {
+                background-color: #edf2f7;
+                color: #2d3748;
+                font-weight: bold;
+                padding: 8px;
+                border-radius: 6px;
+                font-size: 12px;
+                text-align: center;
+            }
+            
+            /* SpinBox */
+            QSpinBox {
+                background-color: #f7fafc;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 8px;
+                font-size: 14px;
+                min-height: 20px;
+                color: #2d3748;
+            }
+            QSpinBox:focus {
+                border-color: #4299e1;
+                background-color: white;
+            }
+            QSpinBox::up-button, QSpinBox::down-button {
+                width: 20px;
+                background: #e2e8f0;
+                border-radius: 4px;
+                margin: 2px;
+            }
+            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+                background: #cbd5e0;
+            }
+            
+            /* ComboBox */
+            QComboBox {
+                background-color: #f7fafc;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 8px;
+                font-size: 13px;
+                min-height: 20px;
+            }
+            QComboBox:focus {
+                border-color: #4299e1;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 30px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                border: 1px solid #e2e8f0;
+                selection-background-color: #4299e1;
+                selection-color: white;
+            }
+            
+            /* Результаты */
+            QLabel#resultValue {
+                background-color: #ebf8ff;
+                color: #2b6cb0;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 8px;
+                font-size: 14px;
+                border: 2px solid #bee3f8;
+                min-width: 60px;
+                text-align: center;
+            }
+            QLabel#totalValue {
+                background-color: #c6f6d5;
+                color: #22543d;
+                font-weight: bold;
+                padding: 12px;
+                border-radius: 8px;
+                font-size: 16px;
+                border: 2px solid #9ae6b4;
+            }
+            
+            /* Кнопка */
+            #actionButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #4299e1, stop:1 #3182ce);
+                color: white;
+                border: none;
+                border-radius: 10px;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 12px 30px;
+            }
+            #actionButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #3182ce, stop:1 #2b6cb0);
+            }
+            #actionButton:pressed {
+                background: #2c5282;
+            }
+            
+            /* ScrollArea */
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+            
+            /* GroupBox */
+            QGroupBox {
+                background-color: white;
+                border-radius: 12px;
+                border: 1px solid #e1e4e8;
+                margin-top: 15px;
+                font-weight: bold;
+                font-size: 14px;
+                color: #1a1a2e;
+                padding: 20px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 20px;
+                padding: 0 10px;
+                color: #2d3748;
+            }
+            
+            /* ProgressBar */
+            QProgressBar {
+                border: none;
+                border-radius: 6px;
+                background-color: #e2e8f0;
+                text-align: center;
+                color: #2d3748;
+                font-weight: bold;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                border-radius: 6px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #48bb78, stop:1 #38a169);
+            }
+        """)
+        
+    def setup_ui(self):
+        # Заголовок приложения
+        header = QHBoxLayout()
+        title = QLabel("📊 Метод функциональных точек")
+        title.setObjectName("sectionHeader")
+        title.setFont(QFont("Segoe UI", 24, QFont.Bold))
+        header.addWidget(title)
+        header.addStretch()
+        self.main_layout.addLayout(header)
+        
+        # Scroll area для контента
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(25)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # === БЛОК 1: Таблица функциональных точек ===
+        fp_card = ModernCard()
+        fp_layout = QVBoxLayout()
+        fp_layout.setSpacing(15)
+        
+        # Заголовки таблицы
+        headers_grid = QGridLayout()
+        headers_grid.setSpacing(8)
+        
+        headers = ["Параметр", "Просто\n×3/4/5/7/5", "Средне\n×4/5/7/10/7", "Сложно\n×6/7/10/15/10", "Итого"]
+        for i, text in enumerate(headers):
+            lbl = QLabel(text)
+            lbl.setObjectName("tableHeader" if i == 0 else "complexityHeader")
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setWordWrap(True)
+            if i == 0:
+                headers_grid.addWidget(lbl, 0, 0, 1, 2)
+            else:
+                headers_grid.addWidget(lbl, 0, i+1)
+        
+        fp_layout.addLayout(headers_grid)
+        
+        # Данные: [название, простой_коэф, средний_коэф, сложный_коэф]
+        self.fp_data = [
+            ("Внешние входы (EI)", 3, 4, 6),
+            ("Внешние выходы (EO)", 4, 5, 7),
+            ("Внешние запросы (EQ)", 3, 4, 6),
+            ("Внутренние лог. файлы (ILF)", 7, 10, 15),
+            ("Внешние лог. файлы (EIF)", 5, 7, 10),
+        ]
+        
+        self.fp_spinboxes = {}
+        self.fp_labels = {}
+        
+        for idx, (name, s_coef, m_coef, h_coef) in enumerate(self.fp_data):
+            row = QGridLayout()
+            row.setSpacing(8)
+            
+            # Название
+            name_lbl = QLabel(f"  {name}")
+            name_lbl.setStyleSheet("font-weight: 500; color: #4a5568; padding: 5px;")
+            row.addWidget(name_lbl, 0, 0, 1, 2)
+            
+            # Просто
+            simple_spin = QSpinBox()
+            simple_spin.setMaximum(999)
+            simple_spin.setMinimum(0)
+            simple_spin.setProperty("coef", s_coef)
+            self.fp_spinboxes[f"{idx}_simple"] = simple_spin
+            
+            simple_lbl = QLabel("0")
+            simple_lbl.setObjectName("resultValue")
+            simple_lbl.setAlignment(Qt.AlignCenter)
+            self.fp_labels[f"{idx}_simple"] = simple_lbl
+            
+            simple_container = QHBoxLayout()
+            simple_container.addWidget(simple_spin)
+            simple_container.addWidget(simple_lbl)
+            row.addLayout(simple_container, 0, 2)
+            
+            # Средне
+            med_spin = QSpinBox()
+            med_spin.setMaximum(999)
+            med_spin.setProperty("coef", m_coef)
+            self.fp_spinboxes[f"{idx}_med"] = med_spin
+            
+            med_lbl = QLabel("0")
+            med_lbl.setObjectName("resultValue")
+            med_lbl.setAlignment(Qt.AlignCenter)
+            self.fp_labels[f"{idx}_med"] = med_lbl
+            
+            med_container = QHBoxLayout()
+            med_container.addWidget(med_spin)
+            med_container.addWidget(med_lbl)
+            row.addLayout(med_container, 0, 3)
+            
+            # Сложно
+            hard_spin = QSpinBox()
+            hard_spin.setMaximum(999)
+            hard_spin.setProperty("coef", h_coef)
+            self.fp_spinboxes[f"{idx}_hard"] = hard_spin
+            
+            hard_lbl = QLabel("0")
+            hard_lbl.setObjectName("resultValue")
+            hard_lbl.setAlignment(Qt.AlignCenter)
+            self.fp_labels[f"{idx}_hard"] = hard_lbl
+            
+            hard_container = QHBoxLayout()
+            hard_container.addWidget(hard_spin)
+            hard_container.addWidget(hard_lbl)
+            row.addLayout(hard_container, 0, 4)
+            
+            # Итого по строке
+            total_lbl = QLabel("0")
+            total_lbl.setObjectName("totalValue")
+            total_lbl.setAlignment(Qt.AlignCenter)
+            self.fp_labels[f"{idx}_total"] = total_lbl
+            row.addWidget(total_lbl, 0, 5)
+            
+            fp_layout.addLayout(row)
+            
+            # Разделитель
+            if idx < len(self.fp_data) - 1:
+                line = QFrame()
+                line.setFrameShape(QFrame.HLine)
+                line.setStyleSheet("color: #e2e8f0;")
+                fp_layout.addWidget(line)
+        
+        # Общий итог UFP
+        total_row = QHBoxLayout()
+        total_row.addStretch()
+        total_lbl_title = QLabel("Общее количество (UFP):")
+        total_lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #1a202c;")
+        total_row.addWidget(total_lbl_title)
+        
+        self.ufp_total = QLabel("0")
+        self.ufp_total.setObjectName("totalValue")
+        self.ufp_total.setStyleSheet("""
+            QLabel {
+                background-color: #9ae6b4;
+                color: #1a202c;
+                font-size: 20px;
+                font-weight: bold;
+                padding: 15px 30px;
+                border-radius: 10px;
+                border: 2px solid #48bb78;
+            }
+        """)
+        total_row.addWidget(self.ufp_total)
+        fp_layout.addLayout(total_row)
+        
+        fp_card.layout.addLayout(fp_layout)
+        scroll_layout.addWidget(fp_card)
+        
+        # === БЛОК 2: Системные характеристики ===
+        sys_card = QGroupBox("⚙️ Системные параметры приложения")
+        sys_layout = QGridLayout()
+        sys_layout.setSpacing(15)
+        sys_layout.setContentsMargins(15, 25, 15, 15)
+        
+        sys_params = [
+            ("Передача данных", "Распределённая обработка"),
+            ("Производительность", "Оперативное обновление"),
+            ("Эксплуатационные ограничения", "Сложность обработки"),
+            ("Частота транзакций", "Повторная используемость"),
+            ("Оперативный ввод данных", "Легкость инсталляции"),
+            ("Эффективность работы пользователей", "Легкость эксплуатации"),
+            ("Количество установок на платформах", "Простота изменений")
+        ]
+        
+        self.sys_spinboxes = []
+        row = 0
+        col = 0
+        
+        for pair in sys_params:
+            for param in pair:
+                lbl = QLabel(param)
+                lbl.setWordWrap(True)
+                lbl.setMinimumWidth(200)
+                lbl.setStyleSheet("font-size: 12px; color: #4a5568; padding: 5px;")
+                
+                spin = QSpinBox()
+                spin.setMaximum(5)
+                spin.setMinimum(0)
+                spin.setValue(3)
+                spin.setFixedWidth(80)
+                spin.setAlignment(Qt.AlignCenter)
+                spin.setStyleSheet("""
+                    QSpinBox {
+                        font-size: 14px;
+                        font-weight: bold;
+                        background: #edf2f7;
+                    }
+                """)
+                self.sys_spinboxes.append(spin)
+                
+                container = QHBoxLayout()
+                container.addWidget(lbl)
+                container.addStretch()
+                container.addWidget(spin)
+                
+                sys_layout.addLayout(container, row, col)
+                col += 1
+                if col > 1:
+                    col = 0
+                    row += 1
+        
+        # Итог GSC
+        gsc_row = QHBoxLayout()
+        gsc_row.addStretch()
+        gsc_lbl = QLabel("Сумма системных характеристик (TDI):")
+        gsc_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #2d3748;")
+        gsc_row.addWidget(gsc_lbl)
+        
+        self.tdi_label = QLabel("21")
+        self.tdi_label.setStyleSheet("""
+            QLabel {
+                background-color: #feebc8;
+                color: #744210;
+                font-size: 18px;
+                font-weight: bold;
+                padding: 10px 25px;
+                border-radius: 8px;
+                border: 2px solid #f6ad55;
+            }
+        """)
+        self.tdi_label.setAlignment(Qt.AlignCenter)
+        gsc_row.addWidget(self.tdi_label)
+        sys_layout.addLayout(gsc_row, row+1, 0, 1, 2)
+        
+        sys_card.setLayout(sys_layout)
+        scroll_layout.addWidget(sys_card)
+        
+        # === БЛОК 3: Языки программирования ===
+        lang_card = ModernCard("🖥️ Языки программирования")
+        lang_layout = QGridLayout()
+        lang_layout.setSpacing(15)
+        
+        self.lang_combos = []
+        self.lang_spins = []
+        
+        languages = ["Python", "Java", "C++", "C#", "JavaScript", "Go", "Rust", 
+                     "PHP", "Ruby", "Swift", "Kotlin", "TypeScript", "Другой"]
+        
+        for i in range(3):
+            lbl = QLabel(f"Язык {i+1}:")
+            lbl.setStyleSheet("font-weight: 500; color: #4a5568;")
+            
+            combo = QComboBox()
+            combo.addItems(languages)
+            if i == 0:
+                combo.setCurrentText("Python")
+            self.lang_combos.append(combo)
+            
+            spin = QSpinBox()
+            spin.setMaximum(100)
+            spin.setSuffix(" %")
+            if i == 0:
+                spin.setValue(100)
+            else:
+                spin.setValue(0)
+            self.lang_spins.append(spin)
+            
+            lang_layout.addWidget(lbl, i, 0)
+            lang_layout.addWidget(combo, i, 1)
+            lang_layout.addWidget(spin, i, 2)
+        
+        lang_card.layout.addLayout(lang_layout)
+        scroll_layout.addWidget(lang_card)
+        
+        # === БЛОК 4: Результаты ===
+        result_card = ModernCard("📈 Результаты расчёта")
+        result_layout = QGridLayout()
+        result_layout.setSpacing(20)
+        
+        # VAF
+        vaf_box = QVBoxLayout()
+        vaf_title = QLabel("VAF (Фактор корректировки)")
+        vaf_title.setAlignment(Qt.AlignCenter)
+        vaf_title.setStyleSheet("color: #718096; font-size: 12px;")
+        self.vaf_label = QLabel("1.00")
+        self.vaf_label.setAlignment(Qt.AlignCenter)
+        self.vaf_label.setStyleSheet("""
+            QLabel {
+                font-size: 28px;
+                font-weight: bold;
+                color: #4299e1;
+                padding: 15px;
+            }
+        """)
+        vaf_box.addWidget(vaf_title)
+        vaf_box.addWidget(self.vaf_label)
+        result_layout.addLayout(vaf_box, 0, 0)
+        
+        # AFP
+        afp_box = QVBoxLayout()
+        afp_title = QLabel("AFP (Скорректированные FP)")
+        afp_title.setAlignment(Qt.AlignCenter)
+        afp_title.setStyleSheet("color: #718096; font-size: 12px;")
+        self.afp_label = QLabel("0")
+        self.afp_label.setAlignment(Qt.AlignCenter)
+        self.afp_label.setStyleSheet("""
+            QLabel {
+                font-size: 32px;
+                font-weight: bold;
+                color: #48bb78;
+                padding: 15px;
+            }
+        """)
+        afp_box.addWidget(afp_title)
+        afp_box.addWidget(self.afp_label)
+        result_layout.addLayout(afp_box, 0, 1)
+        
+        # SLOC
+        sloc_box = QVBoxLayout()
+        sloc_title = QLabel("SLOC (Строки кода)")
+        sloc_title.setAlignment(Qt.AlignCenter)
+        sloc_title.setStyleSheet("color: #718096; font-size: 12px;")
+        self.sloc_label = QLabel("0")
+        self.sloc_label.setAlignment(Qt.AlignCenter)
+        self.sloc_label.setStyleSheet("""
+            QLabel {
+                font-size: 28px;
+                font-weight: bold;
+                color: #ed8936;
+                padding: 15px;
+            }
+        """)
+        sloc_box.addWidget(sloc_title)
+        sloc_box.addWidget(self.sloc_label)
+        result_layout.addLayout(sloc_box, 0, 2)
+        
+        result_card.layout.addLayout(result_layout)
+        scroll_layout.addWidget(result_card)
+        
+        # Кнопка расчёта
+        btn_container = QHBoxLayout()
+        btn_container.addStretch()
+        self.calc_btn = AnimatedButton("🚀 Рассчитать")
+        self.calc_btn.setMinimumWidth(300)
+        btn_container.addWidget(self.calc_btn)
+        btn_container.addStretch()
+        scroll_layout.addLayout(btn_container)
+        
+        scroll.setWidget(scroll_content)
+        self.main_layout.addWidget(scroll)
+        
+        # Статус бар
+        self.statusBar().showMessage("Готово к работе")
+        self.statusBar().setStyleSheet("""
+            QStatusBar {
+                background-color: #2d3748;
+                color: white;
+                padding: 5px;
+                font-size: 12px;
+            }
+        """)
+        
+    def connect_signals(self):
+        # Подключаем все spinBox функциональных точек
+        for key, spin in self.fp_spinboxes.items():
+            spin.valueChanged.connect(self.update_fp_row)
+        
+        # Системные характеристики
+        for spin in self.sys_spinboxes:
+            spin.valueChanged.connect(self.update_tdi)
+        
+        # Кнопка расчёта
+        self.calc_btn.clicked.connect(self.calculate)
+        
+        # Инициализация
+        self.update_tdi()
+        
+    def update_fp_row(self):
+        total_ufp = 0
+        for idx in range(len(self.fp_data)):
+            row_total = 0
+            for level in ["simple", "med", "hard"]:
+                spin = self.fp_spinboxes[f"{idx}_{level}"]
+                coef = spin.property("coef")
+                val = spin.value()
+                result = val * coef
+                self.fp_labels[f"{idx}_{level}"].setText(str(result))
+                row_total += result
+            
+            self.fp_labels[f"{idx}_total"].setText(str(row_total))
+            total_ufp += row_total
+        
+        self.ufp_total.setText(str(total_ufp))
+        
+    def update_tdi(self):
+        total = sum(spin.value() for spin in self.sys_spinboxes)
+        self.tdi_label.setText(str(total))
+        
+    def calculate(self):
+        # Расчёт UFP
+        ufp = int(self.ufp_total.text())
+        
+        # Расчёт VAF
+        tdi = sum(spin.value() for spin in self.sys_spinboxes)
+        vaf = 0.65 + 0.01 * tdi
+        self.vaf_label.setText(f"{vaf:.2f}")
+        
+        # AFP
+        afp = ufp * vaf
+        self.afp_label.setText(f"{afp:.0f}")
+        
+        # SLOC (примерные значения)
+        lang_fp = {
+            "Python": 53, "Java": 53, "C++": 53, "C#": 58,
+            "JavaScript": 54, "Go": 67, "Rust": 52, "PHP": 67,
+            "Ruby": 46, "Swift": 70, "Kotlin": 55, "TypeScript": 52,
+            "Другой": 50
+        }
+        
+        total_sloc = 0
+        for combo, spin in zip(self.lang_combos, self.lang_spins):
+            lang = combo.currentText()
+            perc = spin.value() / 100.0
+            loc_per_fp = lang_fp.get(lang, 50)
+            total_sloc += afp * loc_per_fp * perc
+        
+        self.sloc_label.setText(f"{total_sloc:.0f}")
+        
+        # Анимация кнопки
+        self.animate_button()
+        self.statusBar().showMessage(f"Расчёт завершён: AFP = {afp:.0f}, SLOC = {total_sloc:.0f}")
+        
+    def animate_button(self):
+        anim = QPropertyAnimation(self.calc_btn, b"geometry")
+        anim.setDuration(200)
+        anim.setEasingCurve(QEasingCurve.InOutQuad)
+        rect = self.calc_btn.geometry()
+        anim.setStartValue(rect.adjusted(-5, 0, 5, 0))
+        anim.setEndValue(rect)
+        anim.start()
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    
+    # Шрифт по умолчанию
+    font = QFont("Segoe UI", 10)
+    font.setStyleHint(QFont.SansSerif)
+    app.setFont(font)
+    
+    window = FunctionPointCalculator()
+    window.show()
+    sys.exit(app.exec_())

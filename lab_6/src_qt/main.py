@@ -416,7 +416,7 @@ class CocomoCalculator(QMainWindow):
         
         chart_window = QDialog(self)
         chart_window.setWindowTitle("Диаграмма привлечения сотрудников")
-        chart_window.resize(900, 700)
+        chart_window.resize(1500, 1000)
         
         layout = QVBoxLayout(chart_window)
         
@@ -432,7 +432,7 @@ class CocomoCalculator(QMainWindow):
             stages_names.append(stage_name)
             staff_counts.append(staff)
         
-        fig, ax = plt.subplots(figsize=(10, 5))
+        fig, ax = plt.subplots(figsize=(14, 8))
         
         x = np.arange(len(stages_names))
         bars = ax.bar(x, staff_counts, color="#346edb")

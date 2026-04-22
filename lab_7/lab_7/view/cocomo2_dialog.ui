@@ -1,0 +1,641 @@
+import sys
+from PyQt5.QtWidgets import (
+    QApplication, QDialog, QWidget, QVBoxLayout, QHBoxLayout,
+    QGridLayout, QGroupBox, QLabel, QSpinBox, QComboBox, QPushButton,
+    QScrollArea, QFrame, QSizePolicy, QDoubleSpinBox, QLineEdit
+)
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PyQt5.QtGui import QFont
+
+
+class ModernCard(QFrame):
+    """Карточка с тенью и скруглением"""
+    def __init__(self, title="", parent=None):
+        super().__init__(parent)
+        self.setObjectName("card")
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(24, 24, 24, 24)
+        self.layout.setSpacing(16)
+        
+        if title:
+            self.title = QLabel(title)
+            self.title.setObjectName("cardTitle")
+            self.title.setFont(QFont("Segoe UI", 14, QFont.Bold))
+            self.layout.addWidget(self.title)
+
+
+class ResultBlock(QFrame):
+    """Цветной блок результата"""
+    def __init__(self, title, unit, color_scheme="blue", parent=None):
+        super().__init__(parent)
+        self.setObjectName("resultBlock")
+        
+        colors = {
+            "blue": ("#ebf8ff", "#2b6cb0", "#90cdf4"),
+            "green": ("#f0fff4", "#22543d", "#9ae6b4"),
+            "orange": ("#fffaf0", "#744210", "#fbd38d"),
+            "purple": ("#faf5ff", "#553c9a", "#d6bcfa")
+        }
+        bg, fg, border = colors.get(color_scheme, colors["blue"])
+        
+        self.setStyleSheet(f"""
+            ResultBlock {{
+                background-color: {bg};
+                border-radius: 12px;
+                border: 2px solid {border};
+                padding: 16px;
+            }}
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+        
+        self.value_lbl = QLabel("—")
+        self.value_lbl.setAlignment(Qt.AlignCenter)
+        self.value_lbl.setStyleSheet(f"""
+            color: {fg};
+            font-size: 26px;
+            font-weight: bold;
+            font-family: 'Segoe UI', sans-serif;
+        """)
+        
+        title_lbl = QLabel(title)
+        title_lbl.setAlignment(Qt.AlignCenter)
+        title_lbl.setStyleSheet(f"color: {fg}; font-size: 11px; font-weight: 600;")
+        
+        unit_lbl = QLabel(unit)
+        unit_lbl.setAlignment(Qt.AlignCenter)
+        unit_lbl.setStyleSheet(f"color: {fg}; font-size: 10px; opacity: 0.8;")
+        
+        layout.addWidget(title_lbl)
+        layout.addWidget(self.value_lbl)
+        layout.addWidget(unit_lbl)
+        
+    def set_value(self, value, decimals=1):
+        if isinstance(value, float):
+            self.value_lbl.setText(f"{value:,.{decimals}f}".replace(",", " "))
+        else:
+            self.value_lbl.setText(f"{value:,}".replace(",", " "))
+
+
+class CocomoDialog(QDialog):
+    # Данные COCOMO II
+    SF_LEVELS = ["Очень низкий", "Низкий", "Номинальный", "Высокий", "Очень высокий", "Критический"]
+    SF_VALUES = {
+        "PREC": [6.20, 4.96, 3.72, 2.48, 1.24, 0.00],
+        "FLEX": [5.07, 4.05, 3.04, 2.03, 1.01, 0.00],
+        "RESL": [7.07, 5.65, 4.24, 2.83, 1.41, 0.00],
+        "TEAM": [5.48, 4.38, 3.29, 2.19, 1.10, 0.00],
+        "PMAT": [7.80, 6.24, 4.68, 3.12, 1.56, 0.00]
+    }
+    
+    EM_LEVELS = ["Очень низкий", "Низкий", "Номинальный", "Высокий", "Очень высокий", "Критический"]
+    EM_VALUES = {
+        "RCPX": [0.49, 0.60, 1.00, 1.60, 2.48, 4.07],
+        "RUSE": [None, 0.95, 1.00, 1.07, 1.15, 1.24],
+        "PDIF": [None, 0.87, 1.00, 1.29, 1.81, 2.61],
+        "PREX": [1.59, 1.33, 1.00, 0.91, 0.85, 0.84],
+        "PERS": [2.12, 1.62, 1.00, 0.83, 0.63, 0.50],
+        "FCIL": [1.43, 1.30, 1.00, 0.87, 0.73, 0.62],
+        "SCED": [1.43, 1.14, 1.00, 1.00, 1.00, None]
+    }
+    
+    EXP_LEVELS = ["Очень низкий", "Низкий", "Номинальный", "Высокий", "Очень высокий"]
+    PROD_VALUES = [4, 7, 13, 25, 50]  # Object Points per month
+    
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("COCOMO II — Оценка проекта")
+        self.setMinimumSize(1400, 950)
+        self.setup_styles()
+        self.setup_ui()
+        self.connect_signals()
+        
+    def setup_styles(self):
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #f7fafc;
+            }
+            
+            #card {
+                background-color: white;
+                border-radius: 16px;
+                border: 1px solid #e2e8f0;
+            }
+            #cardTitle {
+                color: #1a202c;
+                margin-bottom: 8px;
+            }
+            
+            QLabel {
+                color: #4a5568;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 13px;
+            }
+            
+            QLabel#sectionHeader {
+                color: #1a202c;
+                font-size: 22px;
+                font-weight: bold;
+                padding: 8px 0;
+            }
+            
+            QGroupBox {
+                background-color: white;
+                border-radius: 16px;
+                border: 1px solid #e2e8f0;
+                margin-top: 12px;
+                font-weight: bold;
+                font-size: 14px;
+                color: #2d3748;
+                padding: 20px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 16px;
+                padding: 0 10px;
+                color: #2d3748;
+            }
+            
+            QComboBox {
+                background-color: #f7fafc;
+                border: 2px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 10px 14px;
+                font-size: 13px;
+                min-width: 180px;
+                color: #2d3748;
+            }
+            QComboBox:focus {
+                border-color: #4299e1;
+                background-color: white;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 30px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                border: 1px solid #e2e8f0;
+                selection-background-color: #4299e1;
+                selection-color: white;
+                padding: 4px;
+            }
+            
+            QSpinBox, QDoubleSpinBox {
+                background-color: #f7fafc;
+                border: 2px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 10px;
+                font-size: 14px;
+                min-height: 20px;
+                color: #2d3748;
+            }
+            QSpinBox:focus, QDoubleSpinBox:focus {
+                border-color: #4299e1;
+                background-color: white;
+            }
+            
+            QPushButton#calcButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #4299e1, stop:1 #3182ce);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 14px 32px;
+                min-height: 24px;
+            }
+            QPushButton#calcButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #3182ce, stop:1 #2b6cb0);
+            }
+            
+            QFrame#separator {
+                background-color: #e2e8f0;
+                max-height: 1px;
+            }
+        """)
+        
+    def setup_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(32, 32, 32, 32)
+        main_layout.setSpacing(24)
+        
+        # Заголовок
+        header = QLabel("📐 COCOMO II — Оценка трудозатрат и сроков")
+        header.setObjectName("sectionHeader")
+        header.setFont(QFont("Segoe UI", 24, QFont.Bold))
+        main_layout.addWidget(header)
+        
+        # ScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setSpacing(24)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # === 1. Экспертная оценка ===
+        cost_card = ModernCard("💰 Экспертная оценка стоимости")
+        cost_row = QHBoxLayout()
+        cost_row.setSpacing(16)
+        
+        cost_label = QLabel("Стоимость человеко-месяца:")
+        cost_label.setStyleSheet("font-size: 14px; font-weight: 500; color: #2d3748;")
+        
+        self.cost_spin = QSpinBox()
+        self.cost_spin.setMaximum(10000000)
+        self.cost_spin.setValue(50000)
+        self.cost_spin.setSingleStep(5000)
+        self.cost_spin.setSuffix(" ₽")
+        self.cost_spin.setMinimumWidth(200)
+        self.cost_spin.setAlignment(Qt.AlignRight)
+        
+        cost_row.addWidget(cost_label)
+        cost_row.addWidget(self.cost_spin)
+        cost_row.addStretch()
+        cost_card.layout.addLayout(cost_row)
+        content_layout.addWidget(cost_card)
+        
+        # === 2. Показатели степени ===
+        sf_card = ModernCard("📊 Показатели степени (Scale Factors)")
+        sf_grid = QGridLayout()
+        sf_grid.setSpacing(16)
+        sf_grid.setColumnStretch(1, 1)
+        sf_grid.setColumnStretch(3, 1)
+        
+        sf_params = [
+            ("Новизна проекта", "PREC", "prec_comboBox"),
+            ("Гибкость процесса", "FLEX", "flex_comboBox"),
+            ("Разрешение рисков", "RESL", "resl_comboBox"),
+            ("Сплоченность команды", "TEAM", "team_comboBox"),
+            ("Зрелость процесса", "PMAT", "pmat_comboBox")
+        ]
+        
+        self.sf_combos = {}
+        for i, (name, key, attr) in enumerate(sf_params):
+            row = i // 2
+            col = (i % 2) * 2
+            
+            lbl = QLabel(name + f" ({key})")
+            lbl.setStyleSheet("font-weight: 500; color: #4a5568;")
+            
+            combo = QComboBox()
+            combo.addItems(self.SF_LEVELS)
+            combo.setCurrentIndex(2)  # Номинальный
+            combo.setProperty("key", key)
+            self.sf_combos[key] = combo
+            
+            sf_grid.addWidget(lbl, row, col)
+            sf_grid.addWidget(combo, row, col + 1)
+        
+        # Итог SF
+        sf_total_row = QHBoxLayout()
+        sf_total_row.addStretch()
+        sf_total_lbl = QLabel("Σ SF (сумма показателей):")
+        sf_total_lbl.setStyleSheet("font-weight: bold; color: #2d3748; font-size: 14px;")
+        self.sf_total_val = QLabel("17.16")
+        self.sf_total_val.setStyleSheet("""
+            QLabel {
+                background-color: #edf2f7;
+                color: #2d3748;
+                font-size: 18px;
+                font-weight: bold;
+                padding: 8px 20px;
+                border-radius: 8px;
+                border: 2px solid #cbd5e0;
+            }
+        """)
+        sf_total_row.addWidget(sf_total_lbl)
+        sf_total_row.addWidget(self.sf_total_val)
+        sf_grid.addLayout(sf_total_row, 3, 2, 1, 2)
+        
+        sf_card.layout.addLayout(sf_grid)
+        content_layout.addWidget(sf_card)
+        
+        # === 3. Ранняя разработка архитектуры ===
+        arch_section = QHBoxLayout()
+        arch_section.setSpacing(20)
+        
+        # Левая часть — параметры
+        arch_card = ModernCard("🏗️ Модель ранней разработки архитектуры")
+        arch_grid = QGridLayout()
+        arch_grid.setSpacing(14)
+        arch_grid.setColumnStretch(1, 1)
+        
+        # Поле для размера (KSLOC) — добавлено для автономности
+        size_lbl = QLabel("Размер проекта (KSLOC):")
+        size_lbl.setStyleSheet("font-weight: 600; color: #2d3748;")
+        self.size_spin = QDoubleSpinBox()
+        self.size_spin.setMaximum(10000)
+        self.size_spin.setValue(10)
+        self.size_spin.setDecimals(1)
+        self.size_spin.setSuffix(" тыс. строк")
+        arch_grid.addWidget(size_lbl, 0, 0)
+        arch_grid.addWidget(self.size_spin, 0, 1)
+        
+        # Разделитель
+        sep = QFrame()
+        sep.setObjectName("separator")
+        sep.setFrameShape(QFrame.HLine)
+        arch_grid.addWidget(sep, 1, 0, 1, 2)
+        
+        em_params = [
+            ("Сложность продукта", "RCPX", "rcpx_comboBox"),
+            ("Повторное использование", "RUSE", "ruse_comboBox"),
+            ("Сложность платформы", "PDIF", "pdif_comboBox"),
+            ("Опытность персонала", "PREX", "prex_comboBox"),
+            ("Способности персонала", "PERS", "pers_comboBox"),
+            ("Возможности среды", "FCIL", "fcil_comboBox"),
+            ("Сроки (SCED)", "SCED", "sceh_comboBox")
+        ]
+        
+        self.em_combos = {}
+        for i, (name, key, attr) in enumerate(em_params):
+            lbl = QLabel(name + f" ({key})")
+            lbl.setStyleSheet("font-weight: 500; color: #4a5568;")
+            
+            combo = QComboBox()
+            values = self.EM_VALUES[key]
+            levels = [l for l, v in zip(self.EM_LEVELS, values) if v is not None]
+            combo.addItems(levels)
+            
+            # Установить номинальный
+            nominal_idx = levels.index("Номинальный") if "Номинальный" in levels else 0
+            combo.setCurrentIndex(nominal_idx)
+            combo.setProperty("key", key)
+            self.em_combos[key] = combo
+            
+            arch_grid.addWidget(lbl, i + 2, 0)
+            arch_grid.addWidget(combo, i + 2, 1)
+        
+        # Кнопка расчёта
+        self.arch_btn = QPushButton("🚀 Рассчитать модель архитектуры")
+        self.arch_btn.setObjectName("calcButton")
+        self.arch_btn.setCursor(Qt.PointingHandCursor)
+        arch_grid.addWidget(self.arch_btn, len(em_params) + 2, 0, 1, 2)
+        
+        arch_card.layout.addLayout(arch_grid)
+        arch_section.addWidget(arch_card, stretch=2)
+        
+        # Правая часть — результаты
+        result_card = ModernCard("📈 Результаты модели архитектуры")
+        result_layout = QVBoxLayout()
+        result_layout.setSpacing(16)
+        
+        self.arch_work = ResultBlock("Трудозатраты", "чел. × мес.", "blue")
+        self.arch_time = ResultBlock("Длительность", "месяцев", "green")
+        self.arch_team = ResultBlock("Численность команды", "человек", "orange")
+        self.arch_budget = ResultBlock("Бюджет", "рублей", "purple")
+        
+        result_layout.addWidget(self.arch_work)
+        result_layout.addWidget(self.arch_time)
+        result_layout.addWidget(self.arch_team)
+        result_layout.addWidget(self.arch_budget)
+        result_layout.addStretch()
+        
+        result_card.layout.addLayout(result_layout)
+        arch_section.addWidget(result_card, stretch=1)
+        
+        content_layout.addLayout(arch_section)
+        
+        # === 4. Композиция приложения ===
+        comp_section = QHBoxLayout()
+        comp_section.setSpacing(20)
+        
+        # Левая часть
+        comp_card = ModernCard("🧩 Модель композиции приложения")
+        comp_grid = QGridLayout()
+        comp_grid.setSpacing(14)
+        
+        # %RUSE
+        ruse_lbl = QLabel("% повторного использования (RUSE):")
+        ruse_lbl.setStyleSheet("font-weight: 500;")
+        self.ruse_spin = QSpinBox()
+        self.ruse_spin.setMaximum(100)
+        self.ruse_spin.setSuffix(" %")
+        comp_grid.addWidget(ruse_lbl, 0, 0)
+        comp_grid.addWidget(self.ruse_spin, 0, 1)
+        
+        # Опытность
+        exp_lbl = QLabel("Опытность команды:")
+        exp_lbl.setStyleSheet("font-weight: 500;")
+        self.exp_combo = QComboBox()
+        self.exp_combo.addItems(self.EXP_LEVELS)
+        self.exp_combo.setCurrentIndex(2)
+        comp_grid.addWidget(exp_lbl, 1, 0)
+        comp_grid.addWidget(self.exp_combo, 1, 1)
+        
+        sep2 = QFrame()
+        sep2.setObjectName("separator")
+        sep2.setFrameShape(QFrame.HLine)
+        comp_grid.addWidget(sep2, 2, 0, 1, 2)
+        
+        # Экранные формы
+        screen_box = QGroupBox("Экранные формы")
+        screen_layout = QGridLayout()
+        screen_layout.setSpacing(10)
+        
+        screen_headers = ["Простые (×1)", "Умеренные (×2)", "Сложные (×3)"]
+        self.screen_spins = []
+        for i, h in enumerate(screen_headers):
+            lbl = QLabel(h)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("font-weight: 600; color: #4a5568; font-size: 12px;")
+            spin = QSpinBox()
+            spin.setMaximum(999)
+            spin.setAlignment(Qt.AlignCenter)
+            self.screen_spins.append(spin)
+            screen_layout.addWidget(lbl, 0, i)
+            screen_layout.addWidget(spin, 1, i)
+        screen_box.setLayout(screen_layout)
+        comp_grid.addWidget(screen_box, 3, 0, 1, 2)
+        
+        # Отчёты
+        report_box = QGroupBox("Отчёты")
+        report_layout = QGridLayout()
+        report_layout.setSpacing(10)
+        
+        report_headers = ["Простые (×2)", "Умеренные (×5)", "Сложные (×8)"]
+        self.report_spins = []
+        for i, h in enumerate(report_headers):
+            lbl = QLabel(h)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("font-weight: 600; color: #4a5568; font-size: 12px;")
+            spin = QSpinBox()
+            spin.setMaximum(999)
+            spin.setAlignment(Qt.AlignCenter)
+            self.report_spins.append(spin)
+            report_layout.addWidget(lbl, 0, i)
+            report_layout.addWidget(spin, 1, i)
+        report_box.setLayout(report_layout)
+        comp_grid.addWidget(report_box, 4, 0, 1, 2)
+        
+        # Модули 3GL
+        mod_lbl = QLabel("Модули на языках 3 поколения (×10 OP):")
+        mod_lbl.setStyleSheet("font-weight: 500;")
+        self.mod_spin = QSpinBox()
+        self.mod_spin.setMaximum(999)
+        comp_grid.addWidget(mod_lbl, 5, 0)
+        comp_grid.addWidget(self.mod_spin, 5, 1)
+        
+        # Кнопка
+        self.comp_btn = QPushButton("🚀 Рассчитать модель композиции")
+        self.comp_btn.setObjectName("calcButton")
+        self.comp_btn.setCursor(Qt.PointingHandCursor)
+        comp_grid.addWidget(self.comp_btn, 6, 0, 1, 2)
+        
+        comp_card.layout.addLayout(comp_grid)
+        comp_section.addWidget(comp_card, stretch=2)
+        
+        # Результаты композиции
+        comp_result_card = ModernCard("📊 Результаты композиции")
+        comp_result_layout = QVBoxLayout()
+        comp_result_layout.setSpacing(16)
+        
+        self.comp_work = ResultBlock("Трудозатраты", "чел. × мес.", "blue")
+        self.comp_time = ResultBlock("Длительность", "месяцев", "green")
+        self.comp_team = ResultBlock("Численность команды", "человек", "orange")
+        self.comp_budget = ResultBlock("Бюджет", "рублей", "purple")
+        
+        comp_result_layout.addWidget(self.comp_work)
+        comp_result_layout.addWidget(self.comp_time)
+        comp_result_layout.addWidget(self.comp_team)
+        comp_result_layout.addWidget(self.comp_budget)
+        comp_result_layout.addStretch()
+        
+        comp_result_card.layout.addLayout(comp_result_layout)
+        comp_section.addWidget(comp_result_card, stretch=1)
+        
+        content_layout.addLayout(comp_section)
+        
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
+        
+    def connect_signals(self):
+        # Автообновление суммы SF
+        for combo in self.sf_combos.values():
+            combo.currentIndexChanged.connect(self.update_sf_total)
+        
+        self.arch_btn.clicked.connect(self.calculate_architecture)
+        self.comp_btn.clicked.connect(self.calculate_composition)
+        
+        self.update_sf_total()
+        
+    def update_sf_total(self):
+        total = 0
+        for key, combo in self.sf_combos.items():
+            idx = combo.currentIndex()
+            total += self.SF_VALUES[key][idx]
+        self.sf_total_val.setText(f"{total:.2f}")
+        
+    def get_sf_sum(self):
+        total = 0
+        for key, combo in self.sf_combos.items():
+            total += self.SF_VALUES[key][combo.currentIndex()]
+        return total
+        
+    def get_em_product(self):
+        product = 1.0
+        for key, combo in self.em_combos.items():
+            idx = combo.currentIndex()
+            values = [v for v in self.EM_VALUES[key] if v is not None]
+            product *= values[idx]
+        return product
+        
+    def calculate_architecture(self):
+        # COCOMO II Early Design
+        size = self.size_spin.value()  # KSLOC
+        sf_sum = self.get_sf_sum()
+        em_product = self.get_em_product()
+        
+        E = 0.91 + 0.01 * sf_sum
+        pm = 2.94 * (size ** E) * em_product
+        
+        # Время разработки (в месяцах)
+        # TDEV = 3.67 * PM^(0.28 + 0.2*(E-0.91))
+        tdev = 3.67 * (pm ** (0.28 + 0.2 * (E - 0.91)))
+        
+        # Средняя численность
+        team = pm / tdev if tdev > 0 else 0
+        
+        # Бюджет
+        cost = self.cost_spin.value()
+        budget = pm * cost
+        
+        # Анимация
+        self.animate_button(self.arch_btn)
+        
+        # Вывод
+        self.arch_work.set_value(pm, 1)
+        self.arch_time.set_value(tdev, 1)
+        self.arch_team.set_value(team, 1)
+        self.arch_budget.set_value(budget, 0)
+        
+    def calculate_composition(self):
+        # Application Composition Model
+        # Object Points
+        screen_op = (self.screen_spins[0].value() * 1 + 
+                     self.screen_spins[1].value() * 2 + 
+                     self.screen_spins[2].value() * 3)
+        
+        report_op = (self.report_spins[0].value() * 2 + 
+                     self.report_spins[1].value() * 5 + 
+                     self.report_spins[2].value() * 8)
+        
+        mod_op = self.mod_spin.value() * 10
+        
+        total_op = screen_op + report_op + mod_op
+        
+        # NOP с учётом повторного использования
+        ruse = self.ruse_spin.value()
+        nop = total_op * (100 - ruse) / 100.0
+        
+        # Productivity
+        prod = self.PROD_VALUES[self.exp_combo.currentIndex()]
+        
+        # PM
+        pm = nop / prod if prod > 0 else 0
+        
+        # Для композиции E обычно ≈ 1.0
+        # TDEV = 3.0 * PM^(0.33 + 0.2*(1.01-1.01)) ≈ 3 * PM^0.33
+        tdev = 3.0 * (pm ** 0.33) if pm > 0 else 0
+        
+        team = pm / tdev if tdev > 0 else 0
+        
+        cost = self.cost_spin.value()
+        budget = pm * cost
+        
+        self.animate_button(self.comp_btn)
+        
+        self.comp_work.set_value(pm, 1)
+        self.comp_time.set_value(tdev, 1)
+        self.comp_team.set_value(team, 1)
+        self.comp_budget.set_value(budget, 0)
+        
+    def animate_button(self, btn):
+        anim = QPropertyAnimation(btn, b"geometry")
+        anim.setDuration(150)
+        anim.setEasingCurve(QEasingCurve.InOutQuad)
+        rect = btn.geometry()
+        anim.setStartValue(rect.adjusted(-3, 0, 3, 0))
+        anim.setEndValue(rect)
+        anim.start()
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    font = QFont("Segoe UI", 10)
+    font.setStyleHint(QFont.SansSerif)
+    app.setFont(font)
+    
+    dlg = CocomoDialog()
+    dlg.show()
+    sys.exit(app.exec_())

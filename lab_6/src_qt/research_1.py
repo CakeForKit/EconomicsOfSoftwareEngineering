@@ -192,6 +192,7 @@ def main():
     results, drivers_to_study = research_influence()
     plot_research_results(results, drivers_to_study)
     
+    print("\n\n")
     # 3. Сравнение автоматизации и персонала
     compare_automation_vs_personnel()
     

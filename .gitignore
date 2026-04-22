@@ -2,4 +2,5 @@ _*
 build
 dist
 venv
+myvenv
 *.spec

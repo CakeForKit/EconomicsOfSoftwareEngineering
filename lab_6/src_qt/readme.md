@@ -2,7 +2,8 @@
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 python .\src_qt\main.py
-pyinstaller --onefile --noconsole --name="CocomoCalculator.exe" .\src_qt\main.py
+python .\src_qt\research_1.py
+pyinstaller --onefile --noconsole --name="CocomoCalculator.exe" .\main.py
 
 
 1. Исследовать степень **влияния различных драйверов** затрат на трудоемкость (РМ) и время разработки (ТМ) для промежуточной модели COCOMO. 
